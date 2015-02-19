@@ -324,7 +324,7 @@ def list_windowsfeatures():
     return result['stdout']
 
 
-def install(name, version=None, source=None, force=False, install_args=None, override_args=False):
+def install(name, version=None, source=None, force=False, install_args=None, override_args=False, force_x86=False):
     '''
     Instructs Chocolatey to install a package.
 
@@ -349,6 +349,9 @@ def install(name, version=None, source=None, force=False, install_args=None, ove
         Set to true if you want to override the original install arguments (for the native installer)
          in the package and use your own.
 
+    force_x86
+        Force x86 (32bit) installation on 64 bit systems. Defaults to false.
+
     CLI Example:
 
     .. code-block:: bash
@@ -369,6 +372,8 @@ def install(name, version=None, source=None, force=False, install_args=None, ove
         cmd.extend(['-InstallArguments', install_args])
     if override_args:
         cmd.extend(['-OverrideArguments'])
+    if force_x86:
+        cmd.extend(['-forcex86'])
     cmd.extend(_yes())
     result = __salt__['cmd.run_all'](cmd, python_shell=False)
 
