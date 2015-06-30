@@ -84,6 +84,8 @@ NSTATES = {
 }
 
 SSH_PASSWORD_PROMP_RE = re.compile(r'(?:.*)[Pp]assword(?: for .*)?:', re.M)
+SSH_PASSWORD_PROMP_SUDO_RE = \
+    re.compile(r'(?:.*sudo)(?:.*)[Pp]assword(?: for .*)?:', re.M)
 
 # Get logging started
 log = logging.getLogger(__name__)
@@ -303,7 +305,14 @@ def bootstrap(vm_, opts):
         if stat.S_ISSOCK(os.stat(os.environ['SSH_AUTH_SOCK']).st_mode):
             has_ssh_agent = True
 
-    if key_filename is None and ('password' not in vm_ or not vm_['password']) and has_ssh_agent is False:
+    if (key_filename is None and
+            salt.config.get_cloud_config_value(
+                'password', vm_, opts, default=None
+            ) is None and
+            salt.config.get_cloud_config_value(
+                'win_password', vm_, opts, default=None
+            ) is None and
+            has_ssh_agent is False):
         raise SaltCloudSystemExit(
             'Cannot deploy salt in a VM if the \'ssh_keyfile\' setting '
             'is not set and there is no password set for the vm. '
@@ -1459,12 +1468,26 @@ def _exec_ssh_cmd(cmd, error_msg=None, allow_failure=False, **kwargs):
         while proc.has_unread_data:
             stdout, stderr = proc.recv()
             if stdout and SSH_PASSWORD_PROMP_RE.search(stdout):
-                if (
+                # if authenticating with an SSH key and 'sudo' is found
+                # in the password prompt
+                if ('key_filename' in kwargs and kwargs['key_filename']
+                    and SSH_PASSWORD_PROMP_SUDO_RE.search(stdout)
+                ):
+                    # do nothing, as command already has adjustments to
+                    # echo out the sudo password as part of the ssh command
+                    # keep waiting for proc output
+                    continue
+                # elif authenticating via password and haven't exhausted our
+                # password_retires
+                elif (
                     kwargs.get('password', None)
                     and (sent_password < password_retries)
                 ):
                     sent_password += 1
                     proc.sendline(kwargs['password'])
+                # else raise an error as we are not authenticating properly
+                #  * not authenticating with an SSH key
+                #  * not authenticating with a Password
                 else:
                     raise SaltCloudPasswordError(error_msg)
             # 0.0125 is really too fast on some systems

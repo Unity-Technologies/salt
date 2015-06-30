@@ -296,7 +296,7 @@ VALID_OPTS = {
 DEFAULT_MINION_OPTS = {
     'interface': '0.0.0.0',
     'master': 'salt',
-    'master_type': 'str',
+    'master_type': 'standard',
     'master_port': '4506',
     'master_finger': '',
     'master_shuffle': False,
@@ -911,14 +911,13 @@ def prepend_root_dir(opts, path_options):
     'root_dir' option.
     '''
     root_dir = os.path.abspath(opts['root_dir'])
+    root_opt = opts['root_dir'].rstrip(os.sep)
     for path_option in path_options:
         if path_option in opts:
-            if opts[path_option].startswith(opts['root_dir']):
-                opts[path_option] = opts[path_option][len(opts['root_dir']):]
-            opts[path_option] = salt.utils.path_join(
-                root_dir,
-                opts[path_option]
-            )
+            path = opts[path_option]
+            if path == root_opt or path.startswith(root_opt + os.sep):
+                path = path[len(root_opt):]
+            opts[path_option] = salt.utils.path_join(root_dir, path)
 
 
 def insert_system_path(opts, paths):
