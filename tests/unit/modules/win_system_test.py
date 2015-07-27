@@ -58,6 +58,29 @@ class WinSystemTestCase(TestCase):
         mock = MagicMock(return_value='salt')
         with patch.dict(win_system.__salt__, {'cmd.run': mock}):
             self.assertEqual(win_system.reboot(), 'salt')
+            mock.assert_called_once_with(['shutdown', '/r', '/t', '5'], python_shell=False)
+
+    def test_reboot_with_timeout(self):
+        '''
+            Test to reboot the system with a timeout
+        '''
+        mock = MagicMock(return_value='salt')
+        with patch.dict(win_system.__salt__, {'cmd.run': mock}):
+            self.assertEqual(win_system.reboot(50), 'salt')
+            mock.assert_called_once_with(['shutdown', '/r', '/t', '50'], python_shell=False)
+
+    def test_reboot_with_wait(self):
+        '''
+            Test to reboot the system with a timeout and
+            wait for it to finish
+        '''
+        mock = MagicMock(return_value='salt')
+        sleep_mock = MagicMock(return_value='salt')
+        with patch.dict(win_system.__salt__, {'cmd.run': mock}):
+            with patch('time.sleep', sleep_mock):
+                self.assertEqual(win_system.reboot(wait_for_reboot=True), 'salt')
+                mock.assert_called_once_with(['shutdown', '/r', '/t', '5'], python_shell=False)
+                sleep_mock.assert_called_once_with(35)
 
     def test_shutdown(self):
         '''
