@@ -216,6 +216,7 @@ class SaltClientsMixIn(object):
                 'local_batch': local_client.cmd_batch,
                 'local_async': local_client.run_job,
                 'runner': salt.runner.RunnerClient(opts=self.application.opts).async,
+                'runner_async': None,  # empty, since we use the same client as `runner`
                 }
         return SaltClientsMixIn.__saltclients
 
@@ -257,7 +258,8 @@ class EventListener(object):
             'master',
             opts['sock_dir'],
             opts['transport'],
-            opts=opts)
+            opts=opts,
+        )
 
         self.event.subscribe()  # start listening for events immediately
 
@@ -270,8 +272,10 @@ class EventListener(object):
         # map of future -> timeout_callback
         self.timeout_map = {}
 
-        self.stream = zmqstream.ZMQStream(self.event.sub,
-                                          io_loop=tornado.ioloop.IOLoop.current())
+        self.stream = zmqstream.ZMQStream(
+            self.event.sub,
+            io_loop=tornado.ioloop.IOLoop.current(),
+        )
         self.stream.on_recv(self._handle_event_socket_recv)
 
     def clean_timeout_futures(self, request):
@@ -389,6 +393,17 @@ class BaseSaltAPIHandler(tornado.web.RequestHandler, SaltClientsMixIn):  # pylin
             self.set_status(400)
             self.write("We don't serve your kind here")
             self.finish()
+
+    def initialize(self):
+        '''
+        Initialize the handler before requests are called
+        '''
+        if not hasattr(self.application, 'event_listener'):
+            logger.critical('init a listener')
+            self.application.event_listener = EventListener(
+                self.application.mod_opts,
+                self.application.opts,
+            )
 
     @property
     def token(self):
@@ -703,7 +718,7 @@ class SaltAPIHandler(BaseSaltAPIHandler, SaltClientsMixIn):  # pylint: disable=W
             Content-Type: application/json
             Content-Legnth: 83
 
-            {"clients": ["local", "local_batch", "local_async","runner"], "return": "Welcome"}
+            {"clients": ["local", "local_batch", "local_async", "runner", "runner_async"], "return": "Welcome"}
         '''
         ret = {"clients": self.saltclients.keys(),
                "return": "Welcome"}
@@ -1016,6 +1031,15 @@ class SaltAPIHandler(BaseSaltAPIHandler, SaltClientsMixIn):  # pylint: disable=W
             raise tornado.gen.Return(event['data']['return'])
         except TimeoutException:
             raise tornado.gen.Return('Timeout waiting for runner to execute')
+
+    @tornado.gen.coroutine
+    def _disbatch_runner_async(self, chunk):
+        '''
+        Disbatch runner client_async commands
+        '''
+        f_call = {'args': [chunk['fun'], chunk]}
+        pub_data = self.saltclients['runner'](chunk['fun'], chunk)
+        raise tornado.gen.Return(pub_data)
 
 
 class MinionSaltAPIHandler(SaltAPIHandler):  # pylint: disable=W0223

@@ -25,6 +25,7 @@ import salt.utils
 import salt.utils.templates
 import salt.utils.gzip_util
 import salt.utils.http
+import salt.utils.url
 from salt.utils.openstack.swift import SaltSwift
 
 # pylint: disable=no-name-in-module,import-error
@@ -352,16 +353,24 @@ class Client(object):
             # Backwards compatibility
             saltenv = env
 
+        if path.startswith('salt://'):
+            path, senv = salt.utils.url.parse(path)
+            if senv:
+                saltenv = senv
+
+        escaped = True if salt.utils.url.is_escaped(path) else False
+
+        # also strip escape character '|'
         localsfilesdest = os.path.join(
-            self.opts['cachedir'], 'localfiles', path.lstrip('/'))
+            self.opts['cachedir'], 'localfiles', path.lstrip('|/'))
         filesdest = os.path.join(
-            self.opts['cachedir'], 'files', saltenv, path.lstrip('salt://'))
+            self.opts['cachedir'], 'files', saltenv, path.lstrip('|/'))
         extrndest = self._extrn_path(path, saltenv)
 
         if os.path.exists(filesdest):
-            return filesdest
+            return salt.utils.url.escape(filesdest) if escaped else filesdest
         elif os.path.exists(localsfilesdest):
-            return localsfilesdest
+            return salt.utils.url.escape(localsfilesdest) if escaped else localsfilesdest
         elif os.path.exists(extrndest):
             return extrndest
 
@@ -536,10 +545,6 @@ class Client(object):
                 else:
                     return ''
         elif not no_cache:
-            if salt.utils.is_windows():
-                netloc = salt.utils.sanitize_win_path_string(url_data.netloc)
-            else:
-                netloc = url_data.netloc
             dest = self._extrn_path(url, saltenv)
             destdir = os.path.dirname(dest)
             if not os.path.isdir(destdir):
@@ -558,7 +563,9 @@ class Client(object):
                                     service_url=self.opts.get('s3.service_url',
                                                               None),
                                     verify_ssl=self.opts.get('s3.verify_ssl',
-                                                              True))
+                                                              True),
+                                    location=self.opts.get('s3.location',
+                                                              None))
                 return dest
             except Exception:
                 raise MinionError('Could not fetch from {0}'.format(url))
@@ -686,12 +693,16 @@ class Client(object):
         Return the extn_filepath for a given url
         '''
         url_data = urlparse(url)
+        if salt.utils.is_windows():
+            netloc = salt.utils.sanitize_win_path_string(url_data.netloc)
+        else:
+            netloc = url_data.netloc
 
         return salt.utils.path_join(
             self.opts['cachedir'],
             'extrn_files',
             saltenv,
-            url_data.netloc,
+            netloc,
             url_data.path
         )
 

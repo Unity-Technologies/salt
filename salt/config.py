@@ -87,6 +87,7 @@ VALID_OPTS = {
     'failhard': bool,
     'autoload_dynamic_modules': bool,
     'environment': str,
+    'pillarenv': str,
     'state_top': str,
     'startup_states': str,
     'sls_list': list,
@@ -290,6 +291,7 @@ VALID_OPTS = {
     'rotate_aes_key': bool,
     'cache_sreqs': bool,
     'cmd_safe': bool,
+    'sudo_user': str,
 }
 
 # default configurations
@@ -320,6 +322,7 @@ DEFAULT_MINION_OPTS = {
     'failhard': False,
     'autoload_dynamic_modules': True,
     'environment': None,
+    'pillarenv': None,
     'extension_modules': '',
     'state_top': 'top.sls',
     'startup_states': '',
@@ -444,6 +447,7 @@ DEFAULT_MINION_OPTS = {
     'zmq_monitor': False,
     'cache_sreqs': True,
     'cmd_safe': True,
+    'sudo_user': '',
 }
 
 DEFAULT_MASTER_OPTS = {

@@ -5,6 +5,7 @@ A collection of mixins useful for the various *Client interfaces
 from __future__ import print_function
 from __future__ import absolute_import
 import collections
+import copy
 import logging
 import traceback
 import multiprocessing
@@ -266,10 +267,12 @@ class SyncClientMixin(object):
         try:
             verify_fun(self.functions, fun)
 
-            # Inject some useful globals to *all* the funciton's global
+            # Inject some useful globals to *all* the function's global
             # namespace only once per module-- not per func
             completed_funcs = []
-            for mod_name in self.functions:
+            _functions = copy.deepcopy(self.functions)
+
+            for mod_name in _functions:
                 mod, _ = mod_name.split('.', 1)
                 if mod in completed_funcs:
                     continue
@@ -435,7 +438,16 @@ class AsyncClientMixin(object):
         if suffix in ('new',):
             return
 
-        outputter = self.opts.get('output', event.get('outputter', None))
+        try:
+            outputter = self.opts.get('output', event.get('outputter', None) or event.get('return').get('outputter'))
+        except AttributeError:
+            outputter = None
+
+        try:
+            if event.get('return').get('outputter'):
+                event['return'].pop('outputter')
+        except AttributeError:
+            pass
         # if this is a ret, we have our own set of rules
         if suffix == 'ret':
             # Check if ouputter was passed in the return data. If this is the case,

@@ -801,7 +801,7 @@ class MWorker(multiprocessing.Process):
         :return: The result of passing the load to a function in ClearFuncs corresponding to
                  the command specified in the load's 'cmd' key.
         '''
-        log.info('Clear payload received with command {cmd}'.format(**load))
+        log.trace('Clear payload received with command {cmd}'.format(**load))
         if load['cmd'].startswith('__'):
             return False
         return getattr(self.clear_funcs, load['cmd'])(load)
@@ -1216,7 +1216,8 @@ class AESFuncs(object):
             load['id'],
             load.get('saltenv', load.get('env')),
             ext=load.get('ext'),
-            pillar=load.get('pillar_override', {}))
+            pillar=load.get('pillar_override', {}),
+            pillarenv=load.get('pillarenv'))
         data = pillar.compile_pillar(pillar_dirs=pillar_dirs)
         self.fs_.update_opts()
         if self.opts.get('minion_data_cache', False):

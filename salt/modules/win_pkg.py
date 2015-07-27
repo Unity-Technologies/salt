@@ -370,10 +370,14 @@ def refresh_db(saltenv='base'):
     if not cached_repo:
         # It's not cached. Cache it, mate.
         cached_repo = __salt__['cp.cache_file'](repocache, saltenv)
+        if not cached_repo:
+            return False
         return True
     # Check if the master's cache file has changed
     if __salt__['cp.hash_file'](repocache) != __salt__['cp.hash_file'](cached_repo, saltenv):
         cached_repo = __salt__['cp.cache_file'](repocache, saltenv)
+        if not cached_repo:
+            return False
     return True
 
 
@@ -621,7 +625,7 @@ def get_repo_data(saltenv='base'):
     if not cached_repo:
         __salt__['pkg.refresh_db']()
     try:
-        with salt.utils.fopen(cached_repo, 'rb') as repofile:
+        with salt.utils.fopen(repocache, 'rb') as repofile:
             try:
                 repodata = msgpack.loads(repofile.read()) or {}
                 #__context__['winrepo.data'] = repodata
@@ -639,7 +643,11 @@ def _get_name_map():
     '''
     Return a reverse map of full pkg names to the names recognized by winrepo.
     '''
-    return get_repo_data().get('name_map', {})
+    u_name_map = {}
+    name_map = get_repo_data().get('name_map', {})
+    for k in name_map.keys():
+        u_name_map[k.decode('utf-8')] = name_map[k]
+    return u_name_map
 
 
 def _get_package_info(name):

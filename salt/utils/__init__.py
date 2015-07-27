@@ -1719,7 +1719,7 @@ def get_hash(path, form='md5', chunk_size=65536):
     '''
     try:
         hash_type = getattr(hashlib, form)
-    except AttributeError:
+    except (AttributeError, TypeError):
         raise ValueError('Invalid hash type: {0}'.format(form))
     with salt.utils.fopen(path, 'rb') as ifile:
         hash_obj = hash_type()
@@ -1996,8 +1996,8 @@ def version_cmp(pkg1, pkg2):
         elif distutils.version.LooseVersion(pkg1) > \
                 distutils.version.LooseVersion(pkg2):
             return 1
-    except Exception as e:
-        log.exception(e)
+    except Exception as exc:
+        log.exception(exc)
     return None
 
 

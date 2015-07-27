@@ -2771,7 +2771,7 @@ def get_managed(
         elif source.startswith('/'):
             source_sum = get_hash(source)
         elif source_hash:
-            protos = ('salt', 'http', 'https', 'ftp', 'swift')
+            protos = ('salt', 'http', 'https', 'ftp', 'swift', 's3')
             if _urlparse(source_hash).scheme in protos:
                 # The source_hash is a file on a server
                 hash_fn = __salt__['cp.cache_file'](source_hash, saltenv)
@@ -2804,7 +2804,7 @@ def get_managed(
     if template and source:
         # check if we have the template cached
         template_dest = __salt__['cp.is_cached'](source, saltenv)
-        if template_dest:
+        if template_dest and source_hash:
             comps = source_hash.split('=')
             cached_template_sum = get_hash(template_dest, form=source_sum['hash_type'])
             if cached_template_sum == source_sum['hsum']:
@@ -3207,7 +3207,7 @@ def check_file_meta(
     if contents is not None:
         # Write a tempfile with the static contents
         tmp = salt.utils.mkstemp(text=True)
-        with salt.utils.fopen(tmp, 'w') as tmp_:
+        with salt.utils.fopen(tmp, 'wb') as tmp_:
             tmp_.write(str(contents))
         # Compare the static contents with the named file
         with contextlib.nested(
@@ -3380,11 +3380,13 @@ def manage_file(name,
             real_name = name
 
         # Only test the checksums on files with managed contents
-        if source:
+        if source and not (not follow_symlinks and os.path.islink(real_name)):
             name_sum = get_hash(real_name, source_sum['hash_type'])
+        else:
+            name_sum = None
 
         # Check if file needs to be replaced
-        if source and source_sum['hsum'] != name_sum:
+        if source and (source_sum['hsum'] != name_sum or name_sum is None):
             if not sfn:
                 sfn = __salt__['cp.cache_file'](source, saltenv)
             if not sfn:
@@ -3438,6 +3440,8 @@ def manage_file(name,
         if contents is not None:
             # Write the static contents to a temporary file
             tmp = salt.utils.mkstemp(text=True)
+            if salt.utils.is_windows():
+                contents = os.linesep.join(contents.splitlines())
             with salt.utils.fopen(tmp, 'w') as tmp_:
                 tmp_.write(str(contents))
 
@@ -3610,6 +3614,8 @@ def manage_file(name,
         if contents is not None:
             # Write the static contents to a temporary file
             tmp = salt.utils.mkstemp(text=True)
+            if salt.utils.is_windows():
+                contents = os.linesep.join(contents.splitlines())
             with salt.utils.fopen(tmp, 'w') as tmp_:
                 tmp_.write(str(contents))
             # Copy into place

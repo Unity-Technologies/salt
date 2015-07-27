@@ -402,6 +402,7 @@ def _interfaces_ip(out):
         based on the current set of cols
         '''
         brd = None
+        scope = None
         if '/' in value:  # we have a CIDR in this address
             ip, cidr = value.split('/')  # pylint: disable=C0103
         else:
@@ -414,7 +415,9 @@ def _interfaces_ip(out):
                 brd = cols[cols.index('brd') + 1]
         elif type_ == 'inet6':
             mask = cidr
-        return (ip, mask, brd)
+            if 'scope' in cols:
+                scope = cols[cols.index('scope') + 1]
+        return (ip, mask, brd, scope)
 
     groups = re.compile('\r?\n\\d').split(out)
     for group in groups:
@@ -441,7 +444,7 @@ def _interfaces_ip(out):
                 iflabel = cols[-1:][0]
                 if type_ in ('inet', 'inet6'):
                     if 'secondary' not in cols:
-                        ipaddr, netmask, broadcast = parse_network(value, cols)
+                        ipaddr, netmask, broadcast, scope = parse_network(value, cols)
                         if type_ == 'inet':
                             if 'inet' not in data:
                                 data['inet'] = list()
@@ -457,11 +460,12 @@ def _interfaces_ip(out):
                             addr_obj = dict()
                             addr_obj['address'] = ipaddr
                             addr_obj['prefixlen'] = netmask
+                            addr_obj['scope'] = scope
                             data['inet6'].append(addr_obj)
                     else:
                         if 'secondary' not in data:
                             data['secondary'] = list()
-                        ip_, mask, brd = parse_network(value, cols)
+                        ip_, mask, brd, scp = parse_network(value, cols)
                         data['secondary'].append({
                             'type': type_,
                             'address': ip_,
@@ -469,7 +473,7 @@ def _interfaces_ip(out):
                             'broadcast': brd,
                             'label': iflabel,
                         })
-                        del ip_, mask, brd
+                        del ip_, mask, brd, scp
                 elif type_.startswith('link'):
                     data['hwaddr'] = value
         if iface:
@@ -494,7 +498,7 @@ def _interfaces_ifconfig(out):
     else:
         pip = re.compile(r'.*?(?:inet addr:|inet )(.*?)\s')
         pip6 = re.compile('.*?(?:inet6 addr: (.*?)/|inet6 )([0-9a-fA-F:]+)')
-        pmask6 = re.compile(r'.*?(?:inet6 addr: [0-9a-fA-F:]+/(\d+)|prefixlen (\d+)).*')
+        pmask6 = re.compile(r'.*?(?:inet6 addr: [0-9a-fA-F:]+/(\d+)|prefixlen (\d+))(?: Scope:([a-zA-Z]+)| scopeid (0x[0-9a-fA-F]))?')
     pmask = re.compile(r'.*?(?:Mask:|netmask )(?:((?:0x)?[0-9a-fA-F]{8})|([\d\.]+))')
     pupdown = re.compile('UP')
     pbcast = re.compile(r'.*?(?:Bcast:|broadcast )([\d\.]+)')
@@ -541,6 +545,9 @@ def _interfaces_ifconfig(out):
                 mmask6 = pmask6.match(line)
                 if mmask6:
                     addr_obj['prefixlen'] = mmask6.group(1) or mmask6.group(2)
+                    if not salt.utils.is_sunos():
+                        ipv6scope = mmask6.group(3) or mmask6.group(4)
+                        addr_obj['scope'] = ipv6scope.lower() if ipv6scope is not None else ipv6scope
                 data['inet6'].append(addr_obj)
         data['up'] = updown
         if iface in ret:
