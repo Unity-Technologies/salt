@@ -90,7 +90,10 @@ def latest_version(*names, **kwargs):
         # get latest available (from win_repo) version of package
         pkg_info = _get_package_info(name)
         log.trace('Raw win_repo pkg_info for {0} is {1}'.format(name, pkg_info))
-        latest_available = _get_latest_pkg_version(pkg_info)
+        if not pkg_info:
+            latest_available = 'Not Found in WinRepo (names are case sensitive)'
+        else:
+            latest_available = _get_latest_pkg_version(pkg_info)
         if latest_available:
             log.debug('Latest available version of package {0} is {1}'.format(name, latest_available))
 
@@ -383,12 +386,28 @@ def refresh_db(saltenv='base'):
 
 def install(name=None, refresh=False, pkgs=None, saltenv='base', **kwargs):
     '''
-    Install the passed package
+    Install the passed package from the winrepo
 
-    Return a dict containing the new package names and versions::
+    :param name: The name of the package to install
+    :type name: str or None
 
-        {'<package>': {'old': '<old-version>',
-                       'new': '<new-version>'}}
+    :param bool refresh: Boolean value representing whether or not to refresh
+        the winrepo db
+
+    :param pkgs: A list of packages to install from a software repository.
+        All packages listed under ``pkgs`` will be installed via a single
+        command.
+    :type pkgs: list or None
+
+    :param str saltenv: The salt environment to use. Default is ``base``.
+
+    :param dict kwargs: Any additional argument that may be passed from the
+        state module. If they don't apply, they are ignored.
+
+    :return: Return a dict containing the new package names and versions::
+
+            {'<package>': {'old': '<old-version>',
+                           'new': '<new-version>'}}
 
     CLI Example:
 
@@ -447,6 +466,9 @@ def install(name=None, refresh=False, pkgs=None, saltenv='base', **kwargs):
             if not cached_pkg:
                 # It's not cached. Cache it, mate.
                 cached_pkg = __salt__['cp.cache_file'](installer, saltenv)
+            if not cached_pkg:
+                return 'Unable to cache file {0} from saltenv: {1}'\
+                    .format(installer, saltenv)
             if __salt__['cp.hash_file'](installer, saltenv) != \
                                           __salt__['cp.hash_file'](cached_pkg):
                 cached_pkg = __salt__['cp.cache_file'](installer, saltenv)
@@ -455,6 +477,9 @@ def install(name=None, refresh=False, pkgs=None, saltenv='base', **kwargs):
 
         cached_pkg = cached_pkg.replace('/', '\\')
         msiexec = pkginfo[version_num].get('msiexec')
+        allusers = pkginfo[version_num].get('allusers')
+        if allusers is None:
+            allusers = True
         install_flags = '{0} {1}'.format(pkginfo[version_num]['install_flags'], options and options.get('extra_install_flags') or "")
 
         cmd = []
@@ -462,6 +487,8 @@ def install(name=None, refresh=False, pkgs=None, saltenv='base', **kwargs):
             cmd.extend(['msiexec', '/i'])
         cmd.append(cached_pkg)
         cmd.extend(install_flags.split())
+        if msiexec and allusers:
+            cmd.append('ALLUSERS="1"')
 
         __salt__['cmd.run'](cmd, output_loglevel='trace', python_shell=False)
 
@@ -541,7 +568,10 @@ def remove(name=None, pkgs=None, version=None, extra_uninstall_flags=None, **kwa
             uninstaller = pkginfo[version].get('installer')
         if not uninstaller:
             return 'Error: No installer or uninstaller configured for package {0}'.format(name)
-        if uninstaller.startswith('salt:'):
+        if uninstaller.startswith('salt:') \
+                or uninstaller.startswith('http:') \
+                or uninstaller.startswith('https:') \
+                or uninstaller.startswith('ftp:'):
             cached_pkg = \
                 __salt__['cp.is_cached'](uninstaller)
             if not cached_pkg:
@@ -624,8 +654,12 @@ def get_repo_data(saltenv='base'):
     cached_repo = __salt__['cp.is_cached'](repocache, saltenv)
     if not cached_repo:
         __salt__['pkg.refresh_db']()
+        cached_repo = __salt__['cp.is_cached'](repocache, saltenv)
+    if not __salt__['file.file_exists'](cached_repo):
+        log.error('No repo file found on the minion')
+        return {}
     try:
-        with salt.utils.fopen(repocache, 'rb') as repofile:
+        with salt.utils.fopen(cached_repo, 'rb') as repofile:
             try:
                 repodata = msgpack.loads(repofile.read()) or {}
                 #__context__['winrepo.data'] = repodata

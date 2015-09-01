@@ -101,9 +101,9 @@ def _wait(jid):
 
 def running(concurrent=False):
     '''
-    Return a dict of state return data if a state function is already running.
-    This function is used to prevent multiple state calls from being run at
-    the same time.
+    Return a list of strings that contain state return data if a state function is
+    already running. This function is used to prevent multiple state calls from being
+    run at the same time.
 
     CLI Example:
 
@@ -731,6 +731,7 @@ def sls(mods,
 def top(topfn,
         test=None,
         queue=False,
+        saltenv=None,
         **kwargs):
     '''
     Execute a specific top file instead of the default
@@ -767,6 +768,8 @@ def top(topfn,
     st_ = salt.state.HighState(opts, pillar)
     st_.push_active()
     st_.opts['state_top'] = os.path.join('salt://', topfn)
+    if saltenv:
+        st_.opts['state_top_saltenv'] = saltenv
     try:
         ret = st_.call_highstate(
                 exclude=kwargs.get('exclude', []),

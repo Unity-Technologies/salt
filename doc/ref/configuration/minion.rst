@@ -82,9 +82,9 @@ The option can can also be set to a list of masters, enabling
 
 .. versionadded:: 2014.7.0
 
-Default: ``standard``
+Default: ``str``
 
-The type of the :conf_minion:`master` variable. Can be ``standard``, ``failover`` or
+The type of the :conf_minion:`master` variable. Can be ``str``, ``failover`` or
 ``func``.
 
 .. code-block:: yaml
@@ -530,7 +530,7 @@ be able to execute a certain module. The sys module is built into the minion
 and cannot be disabled.
 
 This setting can also tune the minion, as all modules are loaded into ram
-disabling modules will lover the minion's ram footprint.
+disabling modules will lower the minion's ram footprint.
 
 .. code-block:: yaml
 

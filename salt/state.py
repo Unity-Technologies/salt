@@ -205,8 +205,8 @@ def format_log(ret):
                         for pkg in chg:
                             old = chg[pkg]['old'] or 'absent'
                             new = chg[pkg]['new'] or 'absent'
-                            msg += '{0} changed from {1} to ' \
-                                   '{2}\n'.format(pkg, old, new)
+                            msg += '{0!r} changed from {1!r} to ' \
+                                   '{2!r}\n'.format(pkg, old, new)
             if not msg:
                 msg = str(ret['changes'])
             if ret['result'] is True or ret['result'] is None:
@@ -245,9 +245,9 @@ class Compiler(object):
     '''
     Class used to compile and manage the High Data structure
     '''
-    def __init__(self, opts):
+    def __init__(self, opts, renderers):
         self.opts = opts
-        self.rend = salt.loader.render(self.opts, {})
+        self.rend = renderers
 
     def render_template(self, template, **kwargs):
         '''
@@ -360,7 +360,7 @@ class Compiler(object):
                             # Add the requires to the reqs dict and check them
                             # all for recursive requisites.
                             argfirst = next(iter(arg))
-                            if argfirst in ('require', 'watch', 'prereq'):
+                            if argfirst in ('require', 'watch', 'prereq', 'onchanges'):
                                 if not isinstance(arg[argfirst], list):
                                     errors.append(('The {0}'
                                     ' statement in state {1!r} in SLS {2!r} '
@@ -965,7 +965,7 @@ class State(object):
                                         'formed as a list'
                                         .format(name, body['__sls__'])
                                     )
-                            if argfirst in ('require', 'watch', 'prereq'):
+                            if argfirst in ('require', 'watch', 'prereq', 'onchanges'):
                                 if not isinstance(arg[argfirst], list):
                                     errors.append(
                                         'The {0} statement in state {1!r} in '
@@ -2245,6 +2245,7 @@ class BaseHighState(object):
                 opts['state_top'] = os.path.join('salt://', mopts['state_top'][1:])
             else:
                 opts['state_top'] = os.path.join('salt://', mopts['state_top'])
+            opts['state_top_saltenv'] = mopts.get('state_top_saltenv', None)
             opts['nodegroups'] = mopts.get('nodegroups', {})
             opts['state_auto_order'] = mopts.get(
                     'state_auto_order',
@@ -2286,7 +2287,8 @@ class BaseHighState(object):
                         )
                     ]
         else:
-            for saltenv in self._get_envs():
+            if self.opts.get('state_top_saltenv', False):
+                saltenv = self.opts['state_top_saltenv']
                 tops[saltenv].append(
                         compile_template(
                             self.client.cache_file(
@@ -2298,6 +2300,19 @@ class BaseHighState(object):
                             saltenv=saltenv
                             )
                         )
+            else:
+                for saltenv in self._get_envs():
+                    tops[saltenv].append(
+                            compile_template(
+                                self.client.cache_file(
+                                    self.opts['state_top'],
+                                    saltenv
+                                    ),
+                                self.state.rend,
+                                self.state.opts['renderer'],
+                                saltenv=saltenv
+                                )
+                            )
 
         # Search initial top files for includes
         for saltenv, ctops in tops.items():
