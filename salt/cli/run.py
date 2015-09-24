@@ -2,11 +2,10 @@
 from __future__ import print_function
 from __future__ import absolute_import
 
-import os
-
 from salt.utils import parsers
-from salt.utils.verify import check_user, verify_env, verify_files
+from salt.utils.verify import check_user, verify_env, verify_files, verify_log
 from salt.exceptions import SaltClientError
+import salt.defaults.exitcodes  # pylint: disable=W0611
 
 
 class SaltRun(parsers.SaltRunOptionParser):
@@ -41,11 +40,12 @@ class SaltRun(parsers.SaltRunOptionParser):
 
         # Setup file logging!
         self.setup_logfile_logger()
+        verify_log(self.config)
 
         runner = salt.runner.Runner(self.config)
         if self.options.doc:
             runner.print_docs()
-            self.exit(os.EX_OK)
+            self.exit(salt.defaults.exitcodes.EX_OK)
 
         # Run this here so SystemExit isn't raised anywhere else when
         # someone tries to use the runners via the python API

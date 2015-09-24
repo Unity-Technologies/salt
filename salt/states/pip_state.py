@@ -57,7 +57,7 @@ def __virtual__():
     '''
     Only load if the pip module is available in __salt__
     '''
-    if HAS_PIP and 'pip.list' in __salt__:
+    if 'pip.list' in __salt__:
         return __virtualname__
     return False
 
@@ -98,6 +98,16 @@ def _check_pkg_version_format(pkg):
 
     ret = {'result': False, 'comment': None,
            'prefix': None, 'version_spec': None}
+
+    if not HAS_PIP:
+        ret['comment'] = (
+            'An importable pip module is required but could not be found on '
+            'your system. This usually means that the system''s pip package '
+            'is not installed properly.'
+        )
+
+        return ret
+
     from_vcs = False
     try:
         # Get the requirement object from the pip library
@@ -464,7 +474,13 @@ def installed(name,
         bin_env = env
 
     # If pkgs is present, ignore name
-    if not pkgs:
+    if pkgs:
+        if not isinstance(pkgs, list):
+            return {'name': name,
+                    'result': False,
+                    'changes': {},
+                    'comment': 'pkgs argument must be formatted as a list'}
+    else:
         pkgs = [name]
 
     # Assumption: If `pkg` is not an `string`, it's a `collections.OrderedDict`

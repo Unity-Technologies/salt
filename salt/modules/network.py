@@ -68,7 +68,7 @@ def wol(mac, bcast='255.255.255.255', destport=9):
 
 def ping(host, timeout=False, return_boolean=False):
     '''
-    Performs a ping to a host
+    Performs an ICMP ping to a host
 
     CLI Example:
 
@@ -650,7 +650,7 @@ def interface(iface):
     '''
     Return the inet address for a given interface
 
-    .. versionadded:: 2014.7
+    .. versionadded:: 2014.7.0
 
     CLI Example:
 
@@ -665,7 +665,7 @@ def interface_ip(iface):
     '''
     Return the inet address for a given interface
 
-    .. versionadded:: 2014.7
+    .. versionadded:: 2014.7.0
 
     CLI Example:
 
@@ -833,7 +833,7 @@ def connect(host, port=None, **kwargs):
     Test connectivity to a host using a particular
     port from the minion.
 
-    .. versionadded:: 2014.7
+    .. versionadded:: 2014.7.0
 
     CLI Example:
 

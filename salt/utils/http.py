@@ -3,7 +3,7 @@
 Utils for making various web calls. Primarily designed for REST, SOAP, webhooks
 and the like, but also useful for basic HTTP testing.
 
-.. versionaddedd:: 2015.2
+.. versionadded:: 2015.5.0
 '''
 from __future__ import absolute_import
 
@@ -201,10 +201,14 @@ def query(url,
             continue
         header_dict[comps[0].strip()] = comps[1].strip()
 
-    if username and password:
-        auth = (username, password)
+    if not auth:
+        if username and password:
+            auth = (username, password)
+        else:
+            auth = None
     else:
-        auth = None
+        if not username and not password and isinstance(auth, tuple):
+            (username, password) = auth  # pylint: disable=W0633
 
     if requests_lib is True:
         sess = requests.Session()
@@ -214,6 +218,11 @@ def query(url,
         sess_cookies = sess.cookies
         sess.verify = verify_ssl
     else:
+        if auth:
+            password_mgr = urllib_request.HTTPPasswordMgrWithDefaultRealm()
+            password_mgr.add_password(None, url, username, password)
+        else:
+            password_mgr = None
         sess_cookies = None
 
     if cookies is not None:
@@ -275,8 +284,10 @@ def query(url,
             urllib_request.HTTPHandler,
             urllib_request.HTTPCookieProcessor(sess_cookies)
         ]
+        if password_mgr:
+            handlers.append(urllib_request.HTTPBasicAuthHandler(password_mgr))
 
-        if url.startswith('https') or port == 443:
+        if url.startswith('https'):
             if not HAS_MATCHHOSTNAME:
                 log.warn(('match_hostname() not available, SSL hostname checking '
                          'not available. THIS CONNECTION MAY NOT BE SECURE!'))
@@ -285,8 +296,12 @@ def query(url,
                          'disabled. THIS CONNECTION MAY NOT BE SECURE!'))
             else:
                 hostname = request.get_host()
+                if ':' in hostname:
+                    hostname, port = hostname.split(':')
+                else:
+                    port = 443
                 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                sock.connect((hostname, 443))
+                sock.connect((hostname, int(port)))
                 sockwrap = ssl.wrap_socket(
                     sock,
                     ca_certs=ca_bundle,
@@ -451,7 +466,6 @@ def get_ca_bundle(opts=None):
 
     # Check Salt first
     for salt_root in file_roots.get('base', []):
-        log.debug('file_roots is {0}'.format(salt_root))
         for path in ('cacert.pem', 'ca-bundle.crt'):
             if os.path.exists(path):
                 return path

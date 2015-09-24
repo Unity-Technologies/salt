@@ -9,7 +9,7 @@ from __future__ import absolute_import
 
 try:
     import impacket.smbconnection
-    from impacket.smbconnection import SessionError
+    from impacket.smb3 import SessionError
     HAS_IMPACKET = True
 except ImportError:
     HAS_IMPACKET = False
@@ -41,6 +41,9 @@ def get_conn(host=None, username=None, password=None):
     '''
     Get an SMB connection
     '''
+    if not HAS_IMPACKET:
+        return False
+
     conn = impacket.smbconnection.SMBConnection(
         remoteName='*SMBSERVER',
         remoteHost=host,
@@ -58,6 +61,9 @@ def mkdirs(path, share='C$', conn=None, host=None, username=None, password=None)
     '''
     if conn is None:
         conn = get_conn(host, username, password)
+
+    if conn is False:
+        return False
 
     comps = path.split('/')
     pos = 1
@@ -77,6 +83,9 @@ def put_str(content, path, share='C$', conn=None, host=None, username=None, pass
     '''
     if conn is None:
         conn = get_conn(host, username, password)
+
+    if conn is False:
+        return False
 
     fh_ = StrHandle(content)
     conn.putFile(share, path, fh_.string)

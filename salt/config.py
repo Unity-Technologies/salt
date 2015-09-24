@@ -25,6 +25,7 @@ except Exception:
 
 # Import salt libs
 import salt.utils
+import salt.utils.dictupdate
 import salt.utils.network
 import salt.syspaths
 import salt.utils.validate.path
@@ -149,6 +150,8 @@ VALID_OPTS = {
     'recon_max': float,
     'recon_default': float,
     'recon_randomize': float,
+    'return_retry_timer': int,
+    'return_retry_random': bool,
     'event_return': str,
     'event_return_queue': int,
     'event_return_whitelist': list,
@@ -412,6 +415,8 @@ DEFAULT_MINION_OPTS = {
     'recon_max': 10000,
     'recon_default': 1000,
     'recon_randomize': True,
+    'return_retry_timer': 4,
+    'return_retry_random': True,
     'syndic_log_file': os.path.join(salt.syspaths.LOGS_DIR, 'syndic'),
     'syndic_pidfile': os.path.join(salt.syspaths.PIDFILE_DIR, 'salt-syndic.pid'),
     'random_reauth_delay': 10,
@@ -908,7 +913,7 @@ def include_config(include, orig_path, verbose):
 
         for fn_ in sorted(glob.glob(path)):
             log.debug('Including configuration from {0!r}'.format(fn_))
-            configuration.update(_read_conf_file(fn_))
+            salt.utils.dictupdate.update(configuration, _read_conf_file(fn_))
     return configuration
 
 

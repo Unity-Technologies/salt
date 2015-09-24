@@ -98,15 +98,14 @@ from salt.utils import namespaced_function
 import salt.utils.cloud
 import salt.config as config
 from salt.cloud.libcloudfuncs import *  # pylint: disable=W0401,W0614
-from salt.exceptions import (
-    SaltCloudException,
-    SaltCloudSystemExit,
-)
+from salt.exceptions import SaltCloudSystemExit
 
 
 # pylint: disable=C0103,E0602,E0102
 # Get logging started
 log = logging.getLogger(__name__)
+
+__virtualname__ = 'gce'
 
 # Redirect GCE functions to this module namespace
 avail_locations = namespaced_function(avail_locations, globals())
@@ -116,7 +115,7 @@ list_nodes = namespaced_function(list_nodes, globals())
 list_nodes_full = namespaced_function(list_nodes_full, globals())
 list_nodes_select = namespaced_function(list_nodes_select, globals())
 
-GCE_VM_NAME_REGEX = re.compile(r'(?:[a-z](?:[-a-z0-9]{0,61}[a-z0-9])?)')
+GCE_VM_NAME_REGEX = re.compile(r'^(?:[a-z](?:[-a-z0-9]{0,61}[a-z0-9])?)$')
 
 
 # Only load in this module if the GCE configurations are in place
@@ -131,30 +130,38 @@ def __virtual__():
         return False
 
     for provider, details in __opts__['providers'].iteritems():
-        if 'provider' not in details or details['provider'] != 'gce':
+        if 'gce' not in details:
             continue
 
-        pathname = os.path.expanduser(details['service_account_private_key'])
+        parameters = details['gce']
+        pathname = os.path.expanduser(parameters['service_account_private_key'])
+
         if not os.path.exists(pathname):
-            raise SaltCloudException(
+            log.error(
                 'The GCE service account private key {0!r} used in '
                 'the {1!r} provider configuration does not exist\n'.format(
-                    details['service_account_private_key'], provider
+                    parameters['service_account_private_key'],
+                    provider
                 )
             )
+            return False
+
         keymode = str(
             oct(stat.S_IMODE(os.stat(pathname).st_mode))
         )
+
         if keymode not in ('0400', '0600'):
-            raise SaltCloudException(
+            log.error(
                 'The GCE service account private key {0!r} used in '
                 'the {1!r} provider configuration needs to be set to '
                 'mode 0400 or 0600\n'.format(
-                    details['service_account_private_key'], provider
+                    parameters['service_account_private_key'],
+                    provider
                 )
             )
+            return False
 
-    return True
+    return __virtualname__
 
 
 def get_configured_provider():
@@ -2016,9 +2023,8 @@ def create(vm_=None, call=None):
 
     if not GCE_VM_NAME_REGEX.match(vm_['name']):
         raise SaltCloudSystemExit(
-            'The allowed VM names must match the following regular expression: {0}'.format(
-                GCE_VM_NAME_REGEX.pattern
-            )
+            'VM names must start with a letter, only contain letters, numbers, or dashes '
+            'and cannot end in a dash.'
         )
 
     conn = get_conn()
@@ -2191,7 +2197,7 @@ def create(vm_=None, call=None):
         )
 
     log.info('Created Cloud VM {0[name]!r}'.format(vm_))
-    log.debug(
+    log.trace(
         '{0[name]!r} VM creation details:\n{1}'.format(
             vm_, pprint.pformat(node_dict)
         )

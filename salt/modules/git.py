@@ -5,21 +5,24 @@ Support for the Git SCM
 from __future__ import absolute_import
 
 # Import python libs
+import logging
 import os
 import subprocess
 
 # Import salt libs
-from salt import utils
+import salt.utils
+import salt.utils.files
+import salt.utils.url
 from salt.exceptions import SaltInvocationError, CommandExecutionError
-from salt.ext.six.moves.urllib.parse import urlparse as _urlparse  # pylint: disable=no-name-in-module,import-error
-from salt.ext.six.moves.urllib.parse import urlunparse as _urlunparse  # pylint: disable=no-name-in-module,import-error
+
+log = logging.getLogger(__name__)
 
 
 def __virtual__():
     '''
     Only load if git exists on the system
     '''
-    return True if utils.which('git') else False
+    return True if salt.utils.which('git') else False
 
 
 def _git_run(cmd, cwd=None, runas=None, identity=None, **kwargs):
@@ -49,22 +52,26 @@ def _git_run(cmd, cwd=None, runas=None, identity=None, **kwargs):
 
             # copy wrapper to area accessible by ``runas`` user
             # currently no suppport in windows for wrapping git ssh
-            if not utils.is_windows():
-                ssh_id_wrapper = os.path.join(utils.templates.TEMPLATE_DIRNAME,
-                                              'git/ssh-id-wrapper')
-                tmp_file = utils.mkstemp()
-                utils.files.copyfile(ssh_id_wrapper, tmp_file)
+            if not salt.utils.is_windows():
+                ssh_id_wrapper = os.path.join(
+                    salt.utils.templates.TEMPLATE_DIRNAME,
+                    'git/ssh-id-wrapper'
+                )
+                tmp_file = salt.utils.mkstemp()
+                salt.utils.files.copyfile(ssh_id_wrapper, tmp_file)
                 os.chmod(tmp_file, 0o500)
                 os.chown(tmp_file, __salt__['file.user_to_uid'](runas), -1)
                 env['GIT_SSH'] = tmp_file
 
             try:
-                result = __salt__['cmd.run_all'](cmd,
-                                                 cwd=cwd,
-                                                 runas=runas,
-                                                 env=env,
-                                                 python_shell=False,
-                                                 **kwargs)
+                result = __salt__['cmd.run_all'](
+                    cmd,
+                    cwd=cwd,
+                    runas=runas,
+                    env=env,
+                    python_shell=False,
+                    log_callback=salt.utils.url.redact_http_basic_auth,
+                    **kwargs)
             finally:
                 if 'GIT_SSH' in env:
                     os.remove(env['GIT_SSH'])
@@ -73,26 +80,34 @@ def _git_run(cmd, cwd=None, runas=None, identity=None, **kwargs):
             if result['retcode'] == 0:
                 return result['stdout']
             else:
-                stderrs.append(result['stderr'])
+                stderr = \
+                    salt.utils.url.redact_http_basic_auth(result['stderr'])
+                stderrs.append(stderr)
 
         # we've tried all IDs and still haven't passed, so error out
         raise CommandExecutionError("\n\n".join(stderrs))
 
     else:
-        result = __salt__['cmd.run_all'](cmd,
-                                         cwd=cwd,
-                                         runas=runas,
-                                         env=env,
-                                         python_shell=False,
-                                         **kwargs)
+        result = __salt__['cmd.run_all'](
+            cmd,
+            cwd=cwd,
+            runas=runas,
+            env=env,
+            python_shell=False,
+            log_callback=salt.utils.url.redact_http_basic_auth,
+            **kwargs)
         retcode = result['retcode']
 
         if retcode == 0:
             return result['stdout']
         else:
+            stderr = salt.utils.url.redact_http_basic_auth(result['stderr'])
             raise CommandExecutionError(
-                'Command {0!r} failed. Stderr: {1!r}'.format(cmd,
-                                                             result['stderr']))
+                'Command {0!r} failed. Stderr: {1!r}'.format(
+                    salt.utils.url.redact_http_basic_auth(cmd),
+                    stderr
+                )
+            )
 
 
 def _git_getdir(cwd, user=None):
@@ -114,21 +129,7 @@ def _check_git():
     '''
     Check if git is available
     '''
-    utils.check_or_die('git')
-
-
-def _add_http_basic_auth(repository, https_user=None, https_pass=None):
-    if https_user is None and https_pass is None:
-        return repository
-    else:
-        urltuple = _urlparse(repository)
-        if urltuple.scheme == 'https':
-            netloc = "{0}:{1}@{2}".format(https_user, https_pass,
-                                          urltuple.netloc)
-            urltuple = urltuple._replace(netloc=netloc)
-            return _urlunparse(urltuple)
-        else:
-            raise ValueError('Basic Auth only supported for HTTPS scheme')
+    salt.utils.check_or_die('git')
 
 
 def current_branch(cwd, user=None):
@@ -216,11 +217,17 @@ def clone(cwd, repository, opts=None, user=None, identity=None,
     '''
     _check_git()
 
-    repository = _add_http_basic_auth(repository, https_user, https_pass)
+    try:
+        repository = salt.utils.url.add_http_basic_auth(repository,
+                                                        https_user,
+                                                        https_pass,
+                                                        https_only=True)
+    except ValueError as exc:
+        raise SaltInvocationError(exc.__str__())
 
     if not opts:
         opts = ''
-    if utils.is_windows():
+    if salt.utils.is_windows():
         cmd = 'git clone {0} {1} {2}'.format(repository, cwd, opts)
     else:
         cmd = 'git clone {0} {1!r} {2}'.format(repository, cwd, opts)
@@ -689,7 +696,7 @@ def push(cwd, remote_name, branch='master', user=None, opts=None,
     return _git_run(cmd, cwd=cwd, runas=user, identity=identity)
 
 
-def remotes(cwd, user=None):
+def remotes(cwd, user=None, redact_auth=True):
     '''
     Get remotes like git remote -v
 
@@ -710,11 +717,14 @@ def remotes(cwd, user=None):
     res = dict()
     for remote_name in ret.splitlines():
         remote = remote_name.strip()
-        res[remote] = remote_get(cwd, remote, user=user)
+        res[remote] = remote_get(cwd,
+                                 remote,
+                                 user=user,
+                                 redact_auth=redact_auth)
     return res
 
 
-def remote_get(cwd, remote='origin', user=None):
+def remote_get(cwd, remote='origin', user=None, redact_auth=True):
     '''
     get the fetch and push URL for a specified remote name
 
@@ -723,6 +733,19 @@ def remote_get(cwd, remote='origin', user=None):
 
     user : None
         Run git as a user other than what the minion runs as
+
+    redact_auth : True
+        Set to ``False`` to include the username/password if the remote uses
+        HTTPS Basic Auth. Otherwise, this information will be redacted.
+
+        .. warning::
+            Setting this to ``False`` will not only reveal any HTTPS Basic Auth
+            that is configured, but the return data will also be written to the
+            job cache. When possible, it is recommended to use SSH for
+            authentication.
+
+        .. versionadded:: 2015.5.6
+
 
     CLI Example:
 
@@ -738,6 +761,11 @@ def remote_get(cwd, remote='origin', user=None):
         remote_fetch_url = lines[1].replace('Fetch URL: ', '').strip()
         remote_push_url = lines[2].replace('Push  URL: ', '').strip()
         if remote_fetch_url != remote and remote_push_url != remote:
+            if redact_auth:
+                remote_fetch_url = \
+                    salt.utils.url.redact_http_basic_auth(remote_fetch_url)
+                remote_push_url = \
+                    salt.utils.url.redact_http_basic_auth(remote_push_url)
             res = (remote_fetch_url, remote_push_url)
             return res
         else:
@@ -780,8 +808,14 @@ def remote_set(cwd, name='origin', url=None, user=None, https_user=None,
     if remote_get(cwd, name):
         cmd = 'git remote rm {0}'.format(name)
         _git_run(cmd, cwd=cwd, runas=user)
-    url = _add_http_basic_auth(url, https_user, https_pass)
-    cmd = 'git remote add {0} {1}'.format(name, url)
+    try:
+        url = salt.utils.url.add_http_basic_auth(url,
+                                                 https_user,
+                                                 https_pass,
+                                                 https_only=True)
+    except ValueError as exc:
+        raise SaltInvocationError(exc.__str__())
+    cmd = 'git remote add {0} \'{1}\''.format(name, url)
     _git_run(cmd, cwd=cwd, runas=user)
     return remote_get(cwd=cwd, remote=name, user=None)
 
@@ -979,6 +1013,14 @@ def ls_remote(cwd, repository="origin", branch="master", user=None,
 
     '''
     _check_git()
-    repository = _add_http_basic_auth(repository, https_user, https_pass)
-    cmd = ' '.join(["git", "ls-remote", "-h", str(repository), str(branch), "| cut -f 1"])
+
+    try:
+        repository = salt.utils.url.add_http_basic_auth(repository,
+                                                        https_user,
+                                                        https_pass,
+                                                        https_only=True)
+    except ValueError as exc:
+        raise SaltInvocationError(exc.__str__())
+
+    cmd = ' '.join(["git", "ls-remote", "-h", "'" + str(repository) + "'", str(branch), "| cut -f 1"])
     return _git_run(cmd, cwd=cwd, runas=user, identity=identity)

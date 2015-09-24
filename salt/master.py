@@ -20,6 +20,7 @@ import resource
 import multiprocessing
 import sys
 import tempfile
+import traceback
 
 # Import third party libs
 import zmq
@@ -1271,8 +1272,11 @@ class AESFuncs(object):
 
         :param dict load: The minion payload
         '''
-        salt.utils.job.store_job(
-            self.opts, load, event=self.event, mminion=self.mminion)
+        try:
+            salt.utils.job.store_job(
+                self.opts, load, event=self.event, mminion=self.mminion)
+        except salt.exception.SaltCacheError:
+            log.error('Could not store job information for load: {0}'.format(load))
 
     def _syndic_return(self, load):
         '''
@@ -2143,9 +2147,11 @@ class ClearFuncs(object):
             clear_load['groups'] = groups
             return self.loadauth.mk_token(clear_load)
         except Exception as exc:
+            type_, value_, traceback_ = sys.exc_info()
             log.error(
                 'Exception occurred while authenticating: {0}'.format(exc)
             )
+            log.error(traceback.format_exception(type_, value_, traceback_))
             return ''
 
     def get_token(self, clear_load):
@@ -2271,18 +2277,13 @@ class ClearFuncs(object):
                 )
                 return ''
             try:
-                # The username with which we are attempting to auth
-                name = self.loadauth.load_name(extra)
-                # The groups to which this user belongs
-                groups = self.loadauth.get_groups(extra)
-                # The configured auth groups
-                group_perm_keys = [
-                    item for item in self.opts['external_auth'][extra['eauth']]
-                    if item.endswith('%')
-                ]
+                name = self.loadauth.load_name(extra)  # The username we are attempting to auth with
+                groups = self.loadauth.get_groups(extra)  # The groups this user belongs to
+                if groups is None:
+                    groups = []
+                group_perm_keys = filter(lambda(item): item.endswith('%'), self.opts['external_auth'][extra['eauth']])  # The configured auth groups
 
-                # First we need to know if the user is allowed to proceed via
-                # any of their group memberships.
+                # First we need to know if the user is allowed to proceed via any of their group memberships.
                 group_auth_match = False
                 for group_config in group_perm_keys:
                     group_config = group_config.rstrip('%')
@@ -2322,9 +2323,12 @@ class ClearFuncs(object):
                     return ''
 
             except Exception as exc:
+                type_, value_, traceback_ = sys.exc_info()
                 log.error(
                     'Exception occurred while authenticating: {0}'.format(exc)
                 )
+                log.error(traceback.format_exception(
+                    type_, value_, traceback_))
                 return ''
 
 #            auth_list = self.opts['external_auth'][extra['eauth']][name] if name in self.opts['external_auth'][extra['eauth']] else self.opts['external_auth'][extra['eauth']]['*']
