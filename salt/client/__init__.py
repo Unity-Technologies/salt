@@ -22,6 +22,7 @@ The data structure needs to be:
 from __future__ import absolute_import, print_function
 import os
 import time
+import random
 import logging
 from datetime import datetime
 
@@ -125,7 +126,7 @@ class LocalClient(object):
     def __init__(self,
                  c_path=os.path.join(syspaths.CONFIG_DIR, 'master'),
                  mopts=None, skip_perm_errors=False,
-                 io_loop=None):
+                 io_loop=None, keep_loop=False):
         '''
         :param IOLoop io_loop: io_loop used for events.
                                Pass in an io_loop if you want asynchronous
@@ -154,7 +155,8 @@ class LocalClient(object):
                 self.opts['transport'],
                 opts=self.opts,
                 listen=False,
-                io_loop=io_loop)
+                io_loop=io_loop,
+                keep_loop=keep_loop)
         self.utils = salt.loader.utils(self.opts)
         self.functions = salt.loader.minion_mods(self.opts, utils=self.utils)
         self.returners = salt.loader.returners(self.opts, self.functions)
@@ -375,13 +377,15 @@ class LocalClient(object):
             >>> SLC.cmd_subset('*', 'test.ping', sub=1)
             {'jerry': True}
         '''
-        group = self.cmd(tgt, 'sys.list_functions', expr_form=expr_form, **kwargs)
+        minion_ret = self.cmd(tgt, 'sys.list_functions', expr_form=expr_form, **kwargs)
+        minions = minion_ret.keys()
+        random.shuffle(minions)
         f_tgt = []
-        for minion, ret in six.iteritems(group):
+        for minion in minions:
+            if fun in minion_ret[minion]:
+                f_tgt.append(minion)
             if len(f_tgt) >= sub:
                 break
-            if fun in ret:
-                f_tgt.append(minion)
         func = self.cmd
         if cli:
             func = self.cmd_cli
@@ -1165,7 +1169,7 @@ class LocalClient(object):
             data = self.returners['{0}.get_jid'.format(self.opts['master_job_cache'])](jid)
         except Exception as exc:
             raise SaltClientError('Could not examine master job cache. '
-                                  'Error occured in {0} returner. '
+                                  'Error occurred in {0} returner. '
                                   'Exception details: {1}'.format(self.opts['master_job_cache'],
                                                                   exc))
         for minion in data:
@@ -1490,10 +1494,6 @@ class LocalClient(object):
                                                  master_uri=master_uri)
 
         try:
-            # Ensure that the event subscriber is connected.
-            # If not, we won't get a response, so error out
-            if not self.event.connect_pub(timeout=timeout):
-                raise SaltReqTimeoutError()
             payload = channel.send(payload_kwargs, timeout=timeout)
         except SaltReqTimeoutError:
             raise SaltReqTimeoutError(

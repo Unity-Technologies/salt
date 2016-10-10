@@ -859,6 +859,9 @@ VALID_OPTS = {
     #
     # Default to False for 2016.3 and Carbon.  Switch to True for Nitrogen
     'proxy_merge_grains_in_module': bool,
+
+    # Extra modules for Salt Thin
+    'thin_extra_mods': str,
 }
 
 # default configurations
@@ -1340,6 +1343,7 @@ DEFAULT_MASTER_OPTS = {
     'http_max_body': 100 * 1024 * 1024 * 1024,  # 100GB
     'python2_bin': 'python2',
     'python3_bin': 'python3',
+    'thin_extra_mods': '',
 }
 
 
@@ -1361,6 +1365,7 @@ CLOUD_CONFIG_DEFAULTS = {
     'default_include': 'cloud.conf.d/*.conf',
     # Global defaults
     'ssh_auth': '',
+    'cachedir': os.path.join(salt.syspaths.CACHE_DIR, 'cloud'),
     'keysize': 4096,
     'os': '',
     'script': 'bootstrap-salt',
@@ -1906,16 +1911,17 @@ def cloud_config(path, env_var='SALT_CLOUD_CONFIG', defaults=None,
     '''
     Read in the salt cloud config and return the dict
     '''
-    # Load the cloud configuration
-    overrides = load_config(
-        path,
-        env_var,
-        os.path.join(salt.syspaths.CONFIG_DIR, 'cloud')
-    )
     if path:
         config_dir = os.path.dirname(path)
     else:
         config_dir = salt.syspaths.CONFIG_DIR
+
+    # Load the cloud configuration
+    overrides = load_config(
+        path,
+        env_var,
+        os.path.join(config_dir, 'cloud')
+    )
 
     if defaults is None:
         defaults = CLOUD_CONFIG_DEFAULTS
@@ -2030,6 +2036,9 @@ def cloud_config(path, env_var='SALT_CLOUD_CONFIG', defaults=None,
     elif master_config_path is not None and master_config is None:
         master_config = salt.config.master_config(master_config_path)
 
+    # cloud config has a seperate cachedir
+    del master_config['cachedir']
+
     # 2nd - salt-cloud configuration which was loaded before so we could
     # extract the master configuration file if needed.
 
@@ -2111,6 +2120,10 @@ def cloud_config(path, env_var='SALT_CLOUD_CONFIG', defaults=None,
 
     # recurse opts for sdb configs
     apply_sdb(opts)
+
+    # prepend root_dir
+    prepend_root_dirs = ['cachedir']
+    prepend_root_dir(opts, prepend_root_dirs)
 
     # Return the final options
     return opts

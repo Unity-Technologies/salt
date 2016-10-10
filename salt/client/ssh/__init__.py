@@ -295,6 +295,7 @@ class SSH(object):
         self.returners = salt.loader.returners(self.opts, {})
         self.fsclient = salt.fileclient.FSClient(self.opts)
         self.thin = salt.utils.thin.gen_thin(self.opts['cachedir'],
+                                             extra_mods=self.opts.get('thin_extra_mods'),
                                              python2_bin=self.opts['python2_bin'],
                                              python3_bin=self.opts['python3_bin'])
         self.mods = mod_data(self.fsclient)
@@ -1107,11 +1108,12 @@ ARGS = {10}\n'''.format(self.minion_config,
                     if not self.tty:
                         # If RSTR is not seen in both stdout and stderr then there
                         # was a thin deployment problem.
-                        return 'ERROR: Failure deploying thin: {0}\n{1}'.format(stdout, stderr), stderr, retcode
+                        log.error('ERROR: Failure deploying thin, retrying: {0}\n{1}'.format(stdout, stderr), stderr, retcode)
+                        return self.cmd_block()
                     elif not re.search(RSTR_RE, stdout):
                         # If RSTR is not seen in stdout with tty, then there
                         # was a thin deployment problem.
-                        return 'ERROR: Failure deploying thin: {0}\n{1}'.format(stdout, stderr), stderr, retcode
+                        log.error('ERROR: Failure deploying thin, retrying: {0}\n{1}'.format(stdout, stderr), stderr, retcode)
                 while re.search(RSTR_RE, stdout):
                     stdout = re.split(RSTR_RE, stdout, 1)[1].strip()
                 if self.tty:

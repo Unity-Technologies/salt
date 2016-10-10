@@ -11,13 +11,10 @@ To use the EC2 cloud module, set up the cloud configuration at
 .. code-block:: yaml
 
     my-ec2-config:
-      # The EC2 API authentication id, set this and/or key to
-      # 'use-instance-role-credentials' to use the instance role credentials
-      # from the meta-data if running on an AWS instance
+      # EC2 API credentials: Access Key ID and Secret Access Key.
+      # Alternatively, to use IAM Instance Role credentials available via
+      # EC2 metadata set both id and key to 'use-instance-role-credentials'
       id: GKTADJGHEIQSXMKKRBJ08H
-      # The EC2 API authentication key, set this and/or id to
-      # 'use-instance-role-credentials' to use the instance role credentials
-      # from the meta-data if running on an AWS instance
       key: askdjghsdfjkghWupUjasdflkdfklgjsdfjajkghs
       # The ssh keyname to use
       keyname: default
@@ -2418,7 +2415,12 @@ def create(vm_=None, call=None):
         vm_,
         __opts__,
         default_users=(
-            'ec2-user', 'ubuntu', 'fedora', 'admin', 'bitnami', 'root'
+            'ec2-user',  # Amazon Linux, Fedora, RHEL; FreeBSD
+            'centos',    # CentOS AMIs from AWS Marketplace
+            'ubuntu',    # Ubuntu
+            'admin',     # Debian GNU/Linux
+            'bitnami',   # BitNami AMIs
+            'root'       # Last resort, default user on RHEL 5, SUSE
         )
     )
 
@@ -3262,6 +3264,7 @@ def list_nodes_full(location=None, call=None):
             get_location(vm_) for vm_ in six.itervalues(__opts__['profiles'])
             if _vm_provider_driver(vm_)
         )
+
         # If there aren't any profiles defined for EC2, check
         # the provider config file, or use the default location.
         if not locations:
@@ -4593,7 +4596,7 @@ def _parse_pricing(url, name):
         regions[region['region']] = sizes
 
     outfile = os.path.join(
-        __opts__['cachedir'], 'cloud', 'ec2-pricing-{0}.p'.format(name)
+        __opts__['cachedir'], 'ec2-pricing-{0}.p'.format(name)
     )
     with salt.utils.fopen(outfile, 'w') as fho:
         msgpack.dump(regions, fho)
@@ -4657,7 +4660,7 @@ def show_pricing(kwargs=None, call=None):
         name = 'linux'
 
     pricefile = os.path.join(
-        __opts__['cachedir'], 'cloud', 'ec2-pricing-{0}.p'.format(name)
+        __opts__['cachedir'], 'ec2-pricing-{0}.p'.format(name)
     )
 
     if not os.path.isfile(pricefile):

@@ -36,6 +36,8 @@ _supported_dists += ('arch', 'mageia', 'meego', 'vmware', 'bluewhite64',
 import salt.log
 import salt.utils
 import salt.utils.network
+if salt.utils.is_windows():
+    import salt.utils.win_osinfo
 
 # Solve the Chicken and egg problem where grains need to run before any
 # of the modules are loaded and are generally available for any usage.
@@ -866,6 +868,10 @@ def _windows_platform_data():
     Use the platform module for as much as we can.
     '''
     # Provides:
+    #    kernelrelease
+    #    osversion
+    #    osrelease
+    #    osservicepack
     #    osmanufacturer
     #    manufacturer
     #    productname
@@ -876,6 +882,7 @@ def _windows_platform_data():
     #    windowsdomain
     #    motherboard.productname
     #    motherboard.serialnumber
+    #    virtual
 
     if not HAS_WMI:
         return {}
@@ -884,7 +891,7 @@ def _windows_platform_data():
         wmi_c = wmi.WMI()
         # http://msdn.microsoft.com/en-us/library/windows/desktop/aa394102%28v=vs.85%29.aspx
         systeminfo = wmi_c.Win32_ComputerSystem()[0]
-        # http://msdn.microsoft.com/en-us/library/windows/desktop/aa394239%28v=vs.85%29.aspx
+        # https://msdn.microsoft.com/en-us/library/aa394239(v=vs.85).aspx
         osinfo = wmi_c.Win32_OperatingSystem()[0]
         # http://msdn.microsoft.com/en-us/library/windows/desktop/aa394077(v=vs.85).aspx
         biosinfo = wmi_c.Win32_BIOS()[0]
@@ -892,9 +899,8 @@ def _windows_platform_data():
         timeinfo = wmi_c.Win32_TimeZone()[0]
 
         # http://msdn.microsoft.com/en-us/library/windows/desktop/aa394072(v=vs.85).aspx
-        motherboard = {}
-        motherboard['product'] = None
-        motherboard['serial'] = None
+        motherboard = {'product': None,
+                       'serial': None}
         try:
             motherboardinfo = wmi_c.Win32_BaseBoard()[0]
             motherboard['product'] = motherboardinfo.Product
@@ -902,13 +908,40 @@ def _windows_platform_data():
         except IndexError:
             log.debug('Motherboard info not available on this system')
 
-        # the name of the OS comes with a bunch of other data about the install
-        # location. For example:
-        # 'Microsoft Windows Server 2008 R2 Standard |C:\\Windows|\\Device\\Harddisk0\\Partition2'
-        (osfullname, _) = osinfo.Name.split('|', 1)
-        osfullname = osfullname.strip()
+        os_release = platform.release()
+        info = salt.utils.win_osinfo.get_os_version_info()
+
+        # Starting with Python 2.7.12 and 3.5.2 the `platform.uname()` function
+        # started reporting the Desktop version instead of the Server version on
+        # Server versions of Windows, so we need to look those up
+        # Check for Python >=2.7.12 or >=3.5.2
+        ver = pythonversion()['pythonversion']
+        if ((six.PY2 and
+                salt.utils.compare_versions(ver, '>=', [2, 7, 12, 'final', 0]))
+            or
+            (six.PY3 and
+                salt.utils.compare_versions(ver, '>=', [3, 5, 2, 'final', 0]))):
+            # (Product Type 1 is Desktop, Everything else is Server)
+            if info['ProductType'] > 1:
+                server = {'Vista': '2008Server',
+                          '7': '2008ServerR2',
+                          '8': '2012Server',
+                          '8.1': '2012ServerR2',
+                          '10': '2016Server'}
+                os_release = server.get(os_release,
+                                        'Grain not found. Update lookup table '
+                                        'in the `_windows_platform_data` '
+                                        'function in `grains\\core.py`')
+
+        service_pack = None
+        if info['ServicePackMajor'] > 0:
+            service_pack = ''.join(['SP', str(info['ServicePackMajor'])])
 
         grains = {
+            'kernelrelease': osinfo.Version,
+            'osversion': osinfo.Version,
+            'osrelease': os_release,
+            'osservicepack': service_pack,
             'osmanufacturer': osinfo.Manufacturer,
             'manufacturer': systeminfo.Manufacturer,
             'productname': systeminfo.Model,
@@ -916,12 +949,12 @@ def _windows_platform_data():
             # 'PhoenixBIOS 4.0 Release 6.0     '
             'biosversion': biosinfo.Name.strip(),
             'serialnumber': biosinfo.SerialNumber,
-            'osfullname': osfullname,
+            'osfullname': osinfo.Caption,
             'timezone': timeinfo.Description,
             'windowsdomain': systeminfo.Domain,
             'motherboard': {
                 'productname': motherboard['product'],
-                'serialnumber': motherboard['serial']
+                'serialnumber': motherboard['serial'],
             }
         }
 
@@ -997,6 +1030,7 @@ _OS_NAME_MAP = {
     'enterprise': 'OEL',
     'oracleserv': 'OEL',
     'cloudserve': 'CloudLinux',
+    'cloudlinux': 'CloudLinux',
     'pidora': 'Fedora',
     'scientific': 'ScientificLinux',
     'synology': 'Synology',
@@ -1145,10 +1179,6 @@ def os_data():
         grains['os_family'] = 'proxy'
         grains['osfullname'] = 'proxy'
     elif salt.utils.is_windows():
-        with salt.utils.winapi.Com():
-            wmi_c = wmi.WMI()
-            grains['osrelease'] = grains['kernelrelease']
-            grains['osversion'] = grains['kernelrelease'] = wmi_c.Win32_OperatingSystem()[0].Version
         grains['os'] = 'Windows'
         grains['os_family'] = 'Windows'
         grains.update(_memdata(grains))
@@ -1257,7 +1287,12 @@ def os_data():
                             grains[
                                 'lsb_{0}'.format(match.groups()[0].lower())
                             ] = match.groups()[1].rstrip()
-            if 'lsb_distrib_id' not in grains:
+            if grains.get('lsb_distrib_description', '').lower().startswith('antergos'):
+                # Antergos incorrectly configures their /etc/lsb-release,
+                # setting the DISTRIB_ID to "Arch". This causes the "os" grain
+                # to be incorrectly set to "Arch".
+                grains['osfullname'] = 'Antergos Linux'
+            elif 'lsb_distrib_id' not in grains:
                 if os.path.isfile('/etc/os-release') or os.path.isfile('/usr/lib/os-release'):
                     os_release = _parse_os_release()
                     if 'NAME' in os_release:
@@ -1490,7 +1525,6 @@ def os_data():
             osrelease_info[idx] = int(value)
         grains['osrelease_info'] = tuple(osrelease_info)
         grains['osmajorrelease'] = str(grains['osrelease_info'][0])  # This will be an integer in the two releases
-        salt.utils.warn_until('Nitrogen', 'The "osmajorrelease" will be a type of an integer.')
         os_name = grains['os' if grains.get('os') in (
             'FreeBSD', 'OpenBSD', 'NetBSD', 'Mac', 'Raspbian') else 'osfullname']
         grains['osfinger'] = '{0}-{1}'.format(

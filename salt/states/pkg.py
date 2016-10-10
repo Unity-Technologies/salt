@@ -165,6 +165,10 @@ def _fulfills_version_spec(versions, oper, desired_version,
     otherwise returns False
     '''
     cmp_func = __salt__.get('pkg.version_cmp')
+    # stripping "with_origin" dict wrapper
+    if salt.utils.is_freebsd():
+        if isinstance(versions, dict) and 'version' in versions:
+            versions = versions['version']
     for ver in versions:
         if salt.utils.compare_versions(ver1=ver,
                                        oper=oper,
@@ -723,7 +727,7 @@ def installed(
         package version will be installed à la ``pkg.latest``.
 
     :param bool refresh:
-        This parameter controls whether or not the packge repo database is
+        This parameter controls whether or not the package repo database is
         updated prior to installing the requested package(s).
 
         If ``True``, the package database will be refreshed (``apt-get
@@ -1265,10 +1269,14 @@ def installed(
     not_modified_hold = None
     failed_hold = None
     if targets or to_reinstall:
+        force = False
+        if salt.utils.is_freebsd():
+            force = True    # Downgrades need to be forced.
         try:
             pkg_ret = __salt__['pkg.install'](name,
                                               refresh=refresh,
                                               version=version,
+                                              force=force,
                                               fromrepo=fromrepo,
                                               skip_verify=skip_verify,
                                               pkgs=pkgs,
@@ -1541,7 +1549,7 @@ def latest(
         Skip the GPG verification check for the package to be installed
 
     refresh
-        This parameter controls whether or not the packge repo database is
+        This parameter controls whether or not the package repo database is
         updated prior to checking for the latest available version of the
         requested packages.
 
@@ -1672,15 +1680,21 @@ def latest(
     problems = []
     for pkg in desired_pkgs:
         if not avail[pkg]:
+            # Package either a) is up-to-date, or b) does not exist
             if not cur[pkg]:
+                # Package does not exist
                 msg = 'No information found for \'{0}\'.'.format(pkg)
                 log.error(msg)
                 problems.append(msg)
             elif watch_flags \
                     and __grains__.get('os') == 'Gentoo' \
                     and __salt__['portage_config.is_changed_uses'](pkg):
-                targets[pkg] = avail[pkg]
+                # Package is up-to-date, but Gentoo USE flags are changing so
+                # we need to add it to the targets
+                targets[pkg] = cur[pkg]
         else:
+            # Package either a) is not installed, or b) is installed and has an
+            # upgrade available
             targets[pkg] = avail[pkg]
 
     if problems:
@@ -2268,7 +2282,13 @@ def group_installed(name, skip=None, include=None, **kwargs):
             if not isinstance(item, six.string_types):
                 include[idx] = str(item)
 
-    diff = __salt__['pkg.group_diff'](name)
+    try:
+        diff = __salt__['pkg.group_diff'](name)
+    except CommandExecutionError as err:
+        ret['comment'] = ('An error was encountered while installing/updating '
+                          'group \'{0}\': {1}.'.format(name, err))
+        return ret
+
     mandatory = diff['mandatory']['installed'] + \
         diff['mandatory']['not installed']
 

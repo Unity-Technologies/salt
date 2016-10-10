@@ -487,12 +487,15 @@ def image_present(name,
                   load=None,
                   force=False,
                   insecure_registry=False,
-                  client_timeout=CLIENT_TIMEOUT):
+                  client_timeout=CLIENT_TIMEOUT,
+                  **kwargs):
     '''
     Ensure that an image is present. The image can either be pulled from a
     Docker registry, built from a Dockerfile, or loaded from a saved image.
     Image names can be specified either using ``repo:tag`` notation, or just
     the repo name (in which case a tag of ``latest`` is assumed).
+    Repo identifier is mandatory, we don't assume the default repository
+    is docker hub.
 
     If neither of the ``build`` or ``load`` arguments are used, then Salt will
     pull from the :ref:`configured registries <docker-authentication>`. If the

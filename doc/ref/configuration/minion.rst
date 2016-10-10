@@ -1165,8 +1165,6 @@ enabled and can be disabled by changing this value to ``False``.
 ``environment``
 ---------------
 
-Default: ``None``
-
 Normally the minion is not isolated to any single environment on the master
 when running states, but the environment can be isolated on the minion side
 by statically setting it. Remember that the recommended way to manage
@@ -1175,6 +1173,28 @@ environments is to isolate via the top file.
 .. code-block:: yaml
 
     environment: dev
+
+.. conf_minion:: state_top_saltenv
+
+``state_top_saltenv``
+---------------------
+
+This option has no default value. Set it to an environment name to ensure that
+*only* the top file from that environment is considered during a
+:ref:`highstate <running-highstate>`.
+
+.. note::
+    Using this value does not change the merging strategy. For instance, if
+    :conf_minion:`top_file_merging_strategy` is left at its default, and
+    :conf_minion:`state_top_saltenv` is set to ``foo``, then any sections for
+    environments other than ``foo`` in the top file for the ``foo`` environment
+    will be ignored. With :conf_minion:`top_file_merging_strategy` set to
+    ``base``, all states from all environments in the ``base`` top file will
+    be applied, while all other top files are ignored.
+
+.. code-block:: yaml
+
+    state_top_saltenv: dev
 
 .. conf_minion:: top_file_merging_strategy
 
@@ -1188,11 +1208,11 @@ for a :ref:`highstate <running-highstate>`, all environments' top files are
 inspected. This config option determines how the SLS targets in those top files
 are handled.
 
-When set to ``merge``, the targets for all SLS files in all environments are
-merged together. A given environment's SLS targets for the highstate will
-consist of the collective SLS targets specified for that environment in all top
-files. The environments will be merged in no specific order, for greater
-control over the order in which the environments are merged use
+When set to the default value of ``merge``, all SLS files are interpreted. The
+first target expression for a given environment is kept, and when the same
+target expression is used in a different top file evaluated later, it is
+ignored. The environments will be evaluated in no specific order, for greater
+control over the order in which the environments are evaluated use
 :conf_minion:`env_order`.
 
 When set to ``same``, then for each environment, only that environment's top
@@ -1216,7 +1236,7 @@ Default: ``[]``
 
 When :conf_minion:`top_file_merging_strategy` is set to ``merge``, and no
 environment is specified for a :ref:`highstate <running-highstate>`, this
-config option allows for the order in which top files are merged to be
+config option allows for the order in which top files are evaluated to be
 explicitly defined.
 
 .. code-block:: yaml

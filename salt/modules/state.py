@@ -146,7 +146,11 @@ def _prior_running_states(jid):
     ret = []
     active = __salt__['saltutil.is_running']('state.*')
     for data in active:
-        if int(data['jid']) < int(jid):
+        try:
+            data_jid = int(data['jid'])
+        except ValueError:
+            continue
+        if data_jid < int(jid):
             ret.append(data)
     return ret
 
@@ -1118,7 +1122,10 @@ def sls_id(
     opts['test'] = _get_test_value(test, **kwargs)
     if 'pillarenv' in kwargs:
         opts['pillarenv'] = kwargs['pillarenv']
-    st_ = salt.state.HighState(opts)
+    try:
+        st_ = salt.state.HighState(opts, proxy=__proxy__)
+    except NameError:
+        st_ = salt.state.HighState(opts)
     if isinstance(mods, six.string_types):
         split_mods = mods.split(',')
     st_.push_active()

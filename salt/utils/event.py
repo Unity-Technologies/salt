@@ -112,7 +112,7 @@ TAGS = {
 
 def get_event(
         node, sock_dir=None, transport='zeromq',
-        opts=None, listen=True, io_loop=None):
+        opts=None, listen=True, io_loop=None, keep_loop=False):
     '''
     Return an event object suitable for the named transport
 
@@ -125,8 +125,8 @@ def get_event(
     # TODO: AIO core is separate from transport
     if transport in ('zeromq', 'tcp'):
         if node == 'master':
-            return MasterEvent(sock_dir, opts, listen=listen, io_loop=io_loop)
-        return SaltEvent(node, sock_dir, opts, listen=listen, io_loop=io_loop)
+            return MasterEvent(sock_dir, opts, listen=listen, io_loop=io_loop, keep_loop=keep_loop)
+        return SaltEvent(node, sock_dir, opts, listen=listen, io_loop=io_loop, keep_loop=keep_loop)
     elif transport == 'raet':
         import salt.utils.raetevent
         return salt.utils.raetevent.RAETEvent(node,
@@ -177,14 +177,19 @@ class SaltEvent(object):
     '''
     def __init__(
             self, node, sock_dir=None,
-            opts=None, listen=True, io_loop=None):
+            opts=None, listen=True, io_loop=None, keep_loop=False):
         '''
         :param IOLoop io_loop: Pass in an io_loop if you want asynchronous
                                operation for obtaining events. Eg use of
                                set_event_handler() API. Otherwise, operation
                                will be synchronous.
+        :param Bool keep_loop: Pass a boolean to determine if we want to keep
+                               the io loop or destroy it when the event handle
+                               is destroyed. This is useful when using event
+                               loops from within third party async code
         '''
         self.serial = salt.payload.Serial({'serial': 'msgpack'})
+        self.keep_loop = keep_loop
         if io_loop is not None:
             self.io_loop = io_loop
             self._run_io_loop_sync = False
@@ -653,7 +658,7 @@ class SaltEvent(object):
             self.opts['max_event_size'],
             is_msgpacked=True,
         )
-        log.debug('Sending event - data = {0}'.format(data))
+        log.debug('Sending event: tag = {0}; data = {1}'.format(tag, data))
         event = '{0}{1}{2}'.format(tag, tagend, serialized_data)
         msg = salt.utils.to_bytes(event, 'utf-8')
         if self._run_io_loop_sync:
@@ -687,7 +692,7 @@ class SaltEvent(object):
             self.subscriber.close()
         if self.pusher is not None:
             self.pusher.close()
-        if self._run_io_loop_sync:
+        if self._run_io_loop_sync and not self.keep_loop:
             self.io_loop.close()
 
     def fire_ret_load(self, load):
@@ -733,7 +738,7 @@ class SaltEvent(object):
         if not self.cpub:
             self.connect_pub()
         # This will handle reconnects
-        self.subscriber.read_async(event_handler)
+        return self.subscriber.read_async(event_handler)
 
     def __del__(self):
         # skip exceptions in destroy-- since destroy() doesn't cover interpreter
@@ -750,9 +755,20 @@ class MasterEvent(SaltEvent):
     RAET compatible
     Create a master event management object
     '''
-    def __init__(self, sock_dir, opts=None, listen=True, io_loop=None):
+    def __init__(
+            self,
+            sock_dir,
+            opts=None,
+            listen=True,
+            io_loop=None,
+            keep_loop=False):
         super(MasterEvent, self).__init__(
-            'master', sock_dir, opts, listen=listen, io_loop=io_loop)
+            'master',
+            sock_dir,
+            opts,
+            listen=listen,
+            io_loop=io_loop,
+            keep_loop=keep_loop)
 
 
 class LocalClientEvent(MasterEvent):

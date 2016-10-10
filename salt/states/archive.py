@@ -95,6 +95,7 @@ def extracted(name,
               if_missing=None,
               keep=False,
               trim_output=False,
+              skip_verify=False,
               source_hash_update=None):
     '''
     .. versionadded:: 2014.1.0
@@ -173,6 +174,13 @@ def extracted(name,
         changed. This would extract regardless of the ``if_missing`` parameter.
 
         .. versionadded:: 2016.3.0
+
+    skip_verify:False
+        If ``True``, hash verification of remote file sources (``http://``,
+        ``https://``, ``ftp://``) will be skipped, and the ``source_hash``
+        argument will be ignored.
+
+        .. versionadded:: 2016.3.4
 
     archive_format
         ``tar``, ``zip`` or ``rar``
@@ -324,6 +332,7 @@ def extracted(name,
                                                source=source,
                                                source_hash=source_hash,
                                                makedirs=True,
+                                               skip_verify=skip_verify,
                                                saltenv=__env__)
         log.debug('file.managed: {0}'.format(file_result))
         # get value of first key
@@ -365,7 +374,16 @@ def extracted(name,
 
     log.debug('Extracting {0} to {1}'.format(filename, name))
     if archive_format == 'zip':
-        files = __salt__['archive.unzip'](filename, name, trim_output=trim_output, password=password)
+        if password is None and salt.utils.which('unzip'):
+            files = __salt__['archive.cmd_unzip'](filename, name, trim_output=trim_output)
+        else:
+            # https://bugs.python.org/issue15795
+            if password is not None:
+                log.warning('Password supplied: using archive.unzip')
+            if not salt.utils.which('unzip'):
+                log.warning('Cannot find unzip command for archive.cmd_unzip:'
+                            ' using archive.unzip instead')
+            files = __salt__['archive.unzip'](filename, name, trim_output=trim_output, password=password)
     elif archive_format == 'rar':
         files = __salt__['archive.unrar'](filename, name, trim_output=trim_output)
     else:

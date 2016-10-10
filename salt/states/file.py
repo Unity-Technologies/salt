@@ -1627,24 +1627,6 @@ def managed(name,
         if not context:
             context = {}
         context['accumulator'] = accum_data[name]
-    if 'file.check_managed_changes' in __salt__:
-        ret['pchanges'] = __salt__['file.check_managed_changes'](
-            name,
-            source,
-            source_hash,
-            user,
-            group,
-            mode,
-            template,
-            context,
-            defaults,
-            __env__,
-            contents,
-            skip_verify,
-            **kwargs
-        )
-    else:
-        ret['pchanges'] = {}
 
     if show_diff is not None:
         show_changes = show_diff
@@ -1656,6 +1638,22 @@ def managed(name,
 
     try:
         if __opts__['test']:
+            if 'file.check_managed_changes' in __salt__:
+                ret['pchanges'] = __salt__['file.check_managed_changes'](
+                    name,
+                    source,
+                    source_hash,
+                    user,
+                    group,
+                    mode,
+                    template,
+                    context,
+                    defaults,
+                    __env__,
+                    contents,
+                    skip_verify,
+                    **kwargs
+                )
             if ret['pchanges']:
                 ret['result'] = None
                 ret['comment'] = 'The file {0} is set to be changed'.format(name)
@@ -2748,7 +2746,8 @@ def replace(name,
             prepend_if_not_found=False,
             not_found_content=None,
             backup='.bak',
-            show_changes=True):
+            show_changes=True,
+            ignore_if_missing=False):
     r'''
     Maintain an edit in a file.
 
@@ -2830,6 +2829,13 @@ def replace(name,
             diff. This may not normally be a concern, but could impact
             performance if used with large files.
 
+    ignore_if_missing : False
+        .. versionadded:: 2016.3.5
+
+        Controls what to do if the file is missing. If set to ``False``, the
+        state will display an error raised by the execution module. If set to
+        ``True``, the state will simply report no changes.
+
     For complex regex patterns, it can be useful to avoid the need for complex
     quoting and escape sequences by making use of YAML's multiline string
     syntax.
@@ -2873,7 +2879,8 @@ def replace(name,
                                        not_found_content=not_found_content,
                                        backup=backup,
                                        dry_run=__opts__['test'],
-                                       show_changes=show_changes)
+                                       show_changes=show_changes,
+                                       ignore_if_missing=ignore_if_missing)
 
     if changes:
         ret['pchanges']['diff'] = changes
@@ -4531,6 +4538,11 @@ def serialize(name,
     '''
     name = os.path.expanduser(name)
 
+    default_serializer_opts = {'yaml.serialize': {'default_flow_style': False},
+                              'json.serialize': {'indent': 2,
+                                       'separators': (',', ': '),
+                                       'sort_keys': True}
+                              }
     ret = {'changes': {},
            'comment': '',
            'name': name,
@@ -4608,8 +4620,7 @@ def serialize(name,
                     ret['comment'] = 'The file {0} is in the correct state'.format(name)
                     return ret
                 dataset = merged_data
-
-    contents = __serializers__[serializer_name](dataset)
+    contents = __serializers__[serializer_name](dataset, **default_serializer_opts.get(serializer_name, {}))
 
     contents += '\n'
 
