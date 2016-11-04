@@ -2073,6 +2073,7 @@ def directory(name,
                                               dir_mode,
                                               follow_symlinks)
 
+    errors = []
     if recurse or clean:
         walk_l = list(os.walk(name))  # walk path only once and store the result
         # root: (dirs, files) structure, compatible for python2.6
@@ -2134,23 +2135,31 @@ def directory(name,
             if check_files:
                 for fn_ in files:
                     full = os.path.join(root, fn_)
-                    ret, perms = __salt__['file.check_perms'](
-                        full,
-                        ret,
-                        user,
-                        group,
-                        file_mode,
-                        follow_symlinks)
+                    try:
+                        ret, _ = __salt__['file.check_perms'](
+                            full,
+                            ret,
+                            user,
+                            group,
+                            file_mode,
+                            follow_symlinks)
+                    except CommandExecutionError as exc:
+                        if not exc.strerror.endswith('does not exist'):
+                            errors.append(exc.strerror)
             if check_dirs:
                 for dir_ in dirs:
                     full = os.path.join(root, dir_)
-                    ret, perms = __salt__['file.check_perms'](
-                        full,
-                        ret,
-                        user,
-                        group,
-                        dir_mode,
-                        follow_symlinks)
+                    try:
+                        ret, _ = __salt__['file.check_perms'](
+                            full,
+                            ret,
+                            user,
+                            group,
+                            dir_mode,
+                            follow_symlinks)
+                    except CommandExecutionError as exc:
+                        if not exc.strerror.endswith('does not exist'):
+                            errors.append(exc.strerror)
 
     if clean:
         keep = _gen_keep_files(name, require, walk_d)
@@ -2168,6 +2177,12 @@ def directory(name,
         ret['comment'] = 'Directory {0} not updated'.format(name)
     elif not ret['changes'] and ret['result']:
         ret['comment'] = 'Directory {0} is in the correct state'.format(name)
+
+    if errors:
+        ret['result'] = False
+        ret['comment'] += '\n\nThe following errors were encountered:\n'
+        for error in errors:
+            ret['comment'] += '\n- {0}'.format(error)
     return ret
 
 
@@ -2380,15 +2395,17 @@ def recurse(name,
 
     # Check source path relative to fileserver root, make sure it is a
     # directory
-    source_rel = source.partition('://')[2]
-    master_dirs = __salt__['cp.list_master_dirs'](__env__)
-    if source_rel not in master_dirs \
+    srcpath, senv = salt.utils.url.parse(source)
+    if senv is None:
+        senv = __env__
+    master_dirs = __salt__['cp.list_master_dirs'](saltenv=senv)
+    if srcpath not in master_dirs \
             and not any((x for x in master_dirs
-                         if x.startswith(source_rel + '/'))):
+                         if x.startswith(srcpath + '/'))):
         ret['result'] = False
         ret['comment'] = (
             'The directory {0!r} does not exist on the salt fileserver '
-            'in saltenv {1!r}'.format(source, __env__)
+            'in saltenv {1!r}'.format(srcpath, senv)
         )
         return ret
 
@@ -2527,16 +2544,15 @@ def recurse(name,
 
     keep = set()
     vdir = set()
-    srcpath = salt.utils.url.parse(source)[0]
     if not srcpath.endswith('/'):
         # we're searching for things that start with this *directory*.
         # use '/' since #master only runs on POSIX
         srcpath = srcpath + '/'
-    fns_ = __salt__['cp.list_master'](__env__, srcpath)
+    fns_ = __salt__['cp.list_master'](senv, srcpath)
     # If we are instructed to keep symlinks, then process them.
     if keep_symlinks:
         # Make this global so that emptydirs can use it if needed.
-        symlinks = __salt__['cp.list_master_symlinks'](__env__, srcpath)
+        symlinks = __salt__['cp.list_master_symlinks'](senv, srcpath)
         fns_ = process_symlinks(fns_, symlinks)
     for fn_ in fns_:
         if not fn_.strip():
@@ -2575,11 +2591,11 @@ def recurse(name,
             manage_directory(dirname)
             vdir.add(dirname)
 
-        src = salt.utils.url.create(fn_)
+        src = salt.utils.url.create(fn_, saltenv=senv)
         manage_file(dest, src)
 
     if include_empty:
-        mdirs = __salt__['cp.list_master_dirs'](__env__, srcpath)
+        mdirs = __salt__['cp.list_master_dirs'](senv, srcpath)
         for mdir in mdirs:
             if not salt.utils.check_include_exclude(
                     os.path.relpath(mdir, srcpath), include_pat, exclude_pat):
@@ -2830,7 +2846,7 @@ def replace(name,
             performance if used with large files.
 
     ignore_if_missing : False
-        .. versionadded:: 2016.3.5
+        .. versionadded:: 2016.3.4
 
         Controls what to do if the file is missing. If set to ``False``, the
         state will display an error raised by the execution module. If set to

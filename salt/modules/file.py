@@ -85,7 +85,8 @@ def __clean_tmp(sfn):
     '''
     Clean out a template temp file
     '''
-    if sfn.startswith(tempfile.gettempdir()):
+    if sfn.startswith(os.path.join(tempfile.gettempdir(),
+                                   salt.utils.files.TEMPFILE_PREFIX)):
         # Don't remove if it exists in file_roots (any saltenv)
         all_roots = itertools.chain.from_iterable(
                 six.itervalues(__opts__['file_roots']))
@@ -1283,7 +1284,7 @@ def _mkstemp_copy(path,
     temp_file = None
     # Create the temp file
     try:
-        temp_file = salt.utils.mkstemp()
+        temp_file = salt.utils.mkstemp(prefix=salt.utils.files.TEMPFILE_PREFIX)
     except (OSError, IOError) as exc:
         raise CommandExecutionError(
             "Unable to create temp file. "
@@ -3529,6 +3530,7 @@ def get_managed(
         '''
         return {'hsum': get_hash(path, form='sha256'), 'hash_type': 'sha256'}
 
+    source_hash_name = kwargs.pop('source_hash_name', None)
     # If we have a source defined, let's figure out what the hash is
     if source:
         urlparsed_source = _urlparse(source)
@@ -3569,7 +3571,8 @@ def get_managed(
                         if not hash_fn:
                             return '', {}, ('Source hash file {0} not found'
                                             .format(source_hash))
-                        source_sum = extract_hash(hash_fn, '', name)
+                        source_sum = extract_hash(
+                            hash_fn, '', source_hash_name or name)
                         if source_sum is None:
                             return _invalid_source_hash_format()
 
@@ -3748,6 +3751,10 @@ def check_perms(name, ret, user, group, mode, follow_symlinks=False):
     perms = {}
     cur = stats(name, follow_symlinks=follow_symlinks)
     if not cur:
+        # NOTE: The file.directory state checks the content of the error
+        # message in this exception. Any changes made to the message for this
+        # exception will reflect the file.directory state as well, and will
+        # likely require changes there.
         raise CommandExecutionError('{0} does not exist'.format(name))
     perms['luser'] = cur['user']
     perms['lgroup'] = cur['group']
@@ -4061,7 +4068,8 @@ def check_file_meta(
 
     if contents is not None:
         # Write a tempfile with the static contents
-        tmp = salt.utils.mkstemp(text=True)
+        tmp = salt.utils.mkstemp(prefix=salt.utils.files.TEMPFILE_PREFIX,
+                                 text=True)
         with salt.utils.fopen(tmp, 'wb') as tmp_:
             tmp_.write(str(contents))
         # Compare the static contents with the named file
@@ -4329,7 +4337,8 @@ def manage_file(name,
 
         if contents is not None:
             # Write the static contents to a temporary file
-            tmp = salt.utils.mkstemp(text=True)
+            tmp = salt.utils.mkstemp(prefix=salt.utils.files.TEMPFILE_PREFIX,
+                                     text=True)
             if salt.utils.is_windows():
                 contents = os.linesep.join(contents.splitlines())
             with salt.utils.fopen(tmp, 'w') as tmp_:
@@ -4512,7 +4521,8 @@ def manage_file(name,
 
         if contents is not None:
             # Write the static contents to a temporary file
-            tmp = salt.utils.mkstemp(text=True)
+            tmp = salt.utils.mkstemp(prefix=salt.utils.files.TEMPFILE_PREFIX,
+                                     text=True)
             if salt.utils.is_windows():
                 contents = os.linesep.join(contents.splitlines())
             with salt.utils.fopen(tmp, 'w') as tmp_:
@@ -4575,6 +4585,8 @@ def mkdir(dir_path,
         # sure that any created dirs are created with the same user and group
         # to follow the principal of least surprise method.
         makedirs_perms(directory, user, group, mode)
+
+    return True
 
 
 def makedirs_(path,
