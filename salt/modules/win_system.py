@@ -450,7 +450,7 @@ def get_hostname():
     '''
     cmd = 'wmic nicconfig get dnshostname'
     ret = __salt__['cmd.run'](cmd=cmd)
-    _, _, hostname = ret.split("\n")
+    hostname = ret.replace("DNSHostName", "").replace("/n", "").strip()
     return hostname
 
 
